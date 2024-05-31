@@ -69,7 +69,7 @@ void loop() {
   // Update LFO phase
   phase += tremoloFrequency * deltaTime;
   if (phase >= 1.0) {
-    phase -= 1.0;op
+    phase -= 1.0;
   int index = (int)(phase * lfoResolution);
   float lfo = pgm_read_byte_near(sineTable + index) / 255.0; // LFO ranges from 0.0 to 1.0
 
