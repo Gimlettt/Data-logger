@@ -1,9 +1,13 @@
+#include <avr/pgmspace.h>
+#include <math.h>
+
 // Pin definitions
-const int analogInPin = A0;  // Analog input pin that the sine wave is attached to
+const int analogInPin = A0;  // Analog input pin that the guitar is connected to
 
 // Constants
-const int sampleRate = 160000; // Sample rate in Hz
-const int distortionThreshold = 512; // Threshold for distortion (clipping)
+const int sampleRate = 33000; // Sample rate in Hz
+
+unsigned long lastTime = 0;
 
 // Function to read analog input quickly
 int analogReadFast(byte ADCpin) 
@@ -15,27 +19,42 @@ int analogReadFast(byte ADCpin)
   return adc;
 }
 
+void DACoutput(int value) {    // value=[0,255], pin 6 is LSB, pin 13 is MSB
+  int PB = value >> 2;
+  PORTB = PB;
+  
+  int VD = PORTD;
+  int PD = value & B00000011;
+  PD = PD << 6;
+  VD = VD & B00111111;
+  VD = VD | PD;
+  PORTD = VD;  
+}
+
 void setup() {
   Serial.begin(115200);
-  // Set PORTB pins as output
   DDRB = DDRB | B00111111;
+  ADCSRA &= ~(bit(ADPS0) | bit(ADPS1) | bit(ADPS2)); // clear prescaler bits
+  ADCSRA |= bit(ADPS2);    //  16-scale 
+  pinMode(6, OUTPUT);
+  pinMode(7, OUTPUT);
 }
 
 void loop() {
-  // Read the analog input
-  int analogValue = analogReadFast(analogInPin);
+  unsigned long currentTime = micros();
+  float deltaTime = (currentTime - lastTime) / 1000000.0;
+  lastTime = currentTime;
 
-  // Apply distortion (clipping)
-  int distortedValue;
-  if (analogValue > distortionThreshold) {
-    distortedValue = distortionThreshold;
-  } else if (analogValue < -distortionThreshold) {
-    distortedValue = -distortionThreshold;
-  } else {
-    distortedValue = analogValue;
+  int analogValue = analogRead(analogInPin);
+
+  // Apply distortion effect
+  int gain = 5; // Increase the gain for more distortion
+  int distortedValue = analogValue * gain;
+  if (distortedValue > 1023) {
+    distortedValue = 1023; // Clipping
+  } else if (distortedValue < 0) {
+    distortedValue = 0; // Clipping
   }
 
-  // Output the distorted value to the DAC
-  // The DAC accepts values between 0 and 4095, while analogRead() returns values between 0 and 1023
-  PORTB = map(distortedValue, 0, 1023, 0, 63);
+  DACoutput(map(distortedValue, 0, 1023, 0, 255));
 }
