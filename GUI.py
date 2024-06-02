@@ -1,11 +1,15 @@
+import serial
 import tkinter as tk
 from tkinter import ttk
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
-import numpy as np
 from collections import deque
-import random
+
+# Serial port configuration
+serial_port = '/dev/tty.usbmodem143301'  # Update this to match your port
+baud_rate = 115200
+arduino_serial = serial.Serial(serial_port, baud_rate)
 
 # Create the main window
 root = tk.Tk()
@@ -39,28 +43,20 @@ ax.set_facecolor('#1E1E1E')
 canvas = FigureCanvasTkAgg(fig, master=frame)
 canvas.get_tk_widget().grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
 
-# Variables to simulate data
-frequency = 5.0  # Frequency of the simulated sine wave
-amplitude = 512  # Amplitude of the simulated sine wave
-offset = 512  # Offset to center the sine wave
-sample_rate = 1000  # Sample rate for the simulated data
-time = np.linspace(0, 1, sample_rate)
-current_effect = "None"
-effects = ["Distortion", "Chorus", "Tremolo", "Delay", "Reverb"]
-
 # Update the plot
 def update(frame):
-    global current_effect
-    # Simulate incoming data
-    sine_wave = amplitude * np.sin(2 * np.pi * frequency * (frame % sample_rate) / sample_rate) + offset
-    data.append(sine_wave)
-    
-    # Simulate effect change
-    if frame % 200 == 0:  # Change effect every 200 frames (~2 seconds)
-        current_effect = random.choice(effects)
-        effect_label.config(text=f"Current Effect: {current_effect}")
-        print(f"Effect changed to: {current_effect}")  # Debug print
-    
+    while arduino_serial.in_waiting:
+        try:
+            line = arduino_serial.readline().strip().decode('utf-8')
+            if line.startswith("Effect:"):
+                effect_name = line.split(":")[1].strip()
+                effect_label.config(text=f"Current Effect: {effect_name}")
+            else:
+                value = int(line)
+                data.append(value)
+        except ValueError:
+            continue
+
     line.set_ydata(data)
     ax.relim()
     ax.autoscale_view()
@@ -72,3 +68,6 @@ ani = animation.FuncAnimation(fig, update, interval=10, blit=True)
 
 # Start the GUI event loop
 root.mainloop()
+
+# Close the serial connection when the GUI is closed
+arduino_serial.close()

@@ -14,7 +14,7 @@ max_samples = 1000  # Number of samples to display
 data = deque([0] * max_samples, maxlen=max_samples)
 
 line, = ax.plot(data)
-plt.ylim(0, 63)
+plt.ylim(0, 1024)  # Updated to match 10-bit ADC range
 plt.xlabel('Sample Index')
 plt.ylabel('Analog Value')
 plt.title('Real-Time Sine Wave')
@@ -28,8 +28,10 @@ def update(frame):
             data.append(value)
         except ValueError:
             continue
-    
+
     line.set_ydata(data)
+    ax.relim()
+    ax.autoscale_view()
     return line,
 
 # Animation function
