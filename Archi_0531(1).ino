@@ -1,26 +1,27 @@
-/*
- * TODO:
- * 
- * 2. examine the output range of tremolo and chorus. Are they [0,255]?
- * 3. redundant sine tables for ring_mod.
- * 4. Serial buffer length = 63 Bytes available. try to find ways to lengthen it.
- */
-
 
 #include <avr/pgmspace.h>
 #include <math.h>
 
-const uint8_t buffer_length = 64; //serial buffer length = 64bytes. 63 Bytes available for TX.
-int audio_buffer[buffer_length]; //initialise buffer. 2nd last byte:current mode. Last byte: current buffer index
-int buffer_index = 0; //change this to uint16_t when length>256, and change the upload code.
-
-unsigned long last_serial_time = 0;
-unsigned long serial_upload_interval = 30*1000; //upload every 30ms
-
+const int bufferSize = 64; //serial buffer length = 64bytes. 63 Bytes available for TX.
+const int analogInPin = A0;  // Analog input pin that the guitar is connected to
+unsigned long lastTime = 0;
 const int button_up = 3;
 const int button_down = 2;
 volatile uint8_t effect_code = 0; //the current code of effect. range = 0 to effect_numbers-1
-volatile uint8_t effect_numbers = 6; //change this for the total number of effects we have.
+volatile uint8_t effect_numbers = 5; //change this for the total number of effects we have.
+
+
+
+const int bitDepth = 4; // Bit depth for bitcrusher effect
+
+const int lfoResolution = 256; // Resolution of the LFO sine wave for chorus effect
+int buffer[bufferSize];
+int bufferIndex = 0;
+float phase = 0.0; // Phase of the LFO
+
+const float tremoloFrequency = 5.0; // Tremolo frequency in Hz
+const float tremoloDepth = 0.5; // Tremolo depth (0.0 to 1.0)
+const int lfoResolution = 256; // Resolution of the LFO sine wave
 
 void DACoutput(int value){    //value=[0,255], pin 6 is LSB, pin 13 is MSB
   int PB = value >> 2;
@@ -34,18 +35,7 @@ void DACoutput(int value){    //value=[0,255], pin 6 is LSB, pin 13 is MSB
   PORTD = VD;  
 }
 
-//for all effects:
-const int sampleRate = 33000; // Sample rate in Hz
-const int lfoResolution = 256; // Resolution of the LFO sine wave
-unsigned long currentTime=0, lastTime=0, deltaTime=0; //put them as global variables
-float phase = 0.0; // Phase of the LFO
 
-//for Tremolo:
-const float tremoloFrequency = 5.0; // Tremolo frequency in Hz
-const float tremoloDepth = 0.5; // Tremolo depth (0.0 to 1.0)
-
-//for bitcrusher:
-const int bitDepth = 4; // Bit depth for bitcrusher effect
 
 // Precomputed sine wave
 const uint8_t sineTable[lfoResolution] PROGMEM = {
@@ -80,133 +70,156 @@ void setup() {
   //configure ADC clock prescaler as 16. max ADC sampling rate 66kHz.
   ADCSRA &= ~(bit (ADPS0) | bit (ADPS1) | bit (ADPS2)); // clear prescaler bits
   ADCSRA |= bit (ADPS2);    //  16-scale 
+
+  for (int i = 0; i < bufferSize; i++) {
+    buffer[i] = 0;
+  }
 }
+
 
 void effect_next(){
   effect_code++;
   effect_code %= effect_numbers;
+  switch(effect_code){
+    case 0:
+      Serial.println("Effect:Bypass");
+      break;
+    
+    case 1:
+      Serial.println("Effect:Tremolo");
+      break;
+    
+    case 2:
+      Serial.println("Effect:Chorus");
+      break;
+    
+    case 3:
+      Serial.println("Effect:Distortion");
+      break;
+
+    case 4:
+      Serial.println("Effect:Bitcrusher"); 
+      break;
+  }
 }
 
 void effect_last(){
   effect_code--;
   effect_code %= effect_numbers;
-}
-
-void buffer_update(){
-  buffer_index++;
-  if(buffer_index >= buffer_length) buffer_index = 0; //this is faster than % operator
-  audio_buffer[buffer_index] = analogRead(A0); 
-}
-
-void bypass(){
-  DACoutput(audio_buffer[buffer_index]);
-}
-
-void tremolo();
-void chorus();
-void distortion();
-void bitcrusher();
-void ring_mod();
-
-void loop() {
-  buffer_update();
-  
-  currentTime = micros();
-  deltaTime = (currentTime - lastTime) / 1000000.0;
-  lastTime = currentTime;
-
-  // if(last_serial_time - currentTime >= serial_upload_interval){
-  //   audio_buffer[buffer_length] = effect_code;  //2nd last byte in the buffer is the effect code.
-  //   audio_buffer[buffer_length+1]= buffer_index;  //2nd last byte in the buffer is the effect code.
-  //   if(Serial.availableForWrite() >= buffer_length+1){
-  //     Serial.write(audio_buffer, buffer_length+1);
-  //   }
-  //   //time taken by serial write could cause clicks in sound. Try to see if we need to re-update the time here.
-  // }
-  
   switch(effect_code){
     case 0:
-      bypass();
+      Serial.println("Effect:Bypass");
       break;
     
     case 1:
-      tremolo();
+      Serial.println("Effect:Tremolo");
       break;
     
     case 2:
-      chorus();
+      Serial.println("Effect:Chorus");
       break;
     
     case 3:
-      distortion();
+      Serial.println("Effect:Distortion");
       break;
 
     case 4:
-      bitcrusher();
-      break;
-
-    case 5:
-      ring_mod();
+      Serial.println("Effect:Bitcrusher"); 
       break;
   }
-Serial.println(audio_buffer[buffer_index]);
-
 }
 
-void tremolo(){
-  // Update LFO phase
-  phase += tremoloFrequency * deltaTime;
-  if (phase >= 1.0) phase -= 1.0;
 
-  int index = (int)(phase * lfoResolution);
-  float lfo = pgm_read_byte_near(sineTable + index) / 255.0; // LFO ranges from 0.0 to 1.0
 
-  // Apply tremolo effect
-  int tremoloValue = int(audio_buffer[buffer_index] * (1.0 - tremoloDepth + (lfo * tremoloDepth)));
-  // Output the tremolo value to the DAC
-  DACoutput(map(tremoloValue, 0, 1023, 0, 63));
-}
-
-void chorus(){
-  // Update LFO phase
-  phase += 0.5 * deltaTime; // Chorus modulation frequency
-  if (phase >= 1.0) phase -= 1.0;
-
-  // Calculate LFO value (sine wave)
-  int index = (int)(phase * lfoResolution);
-  float lfo = pgm_read_byte_near(sineTable + index) / 255.0; // LFO ranges from 0.0 to 1.0
-
-  // Apply chorus effect
-  float mod_depth = 0.5; // Depth of modulation
-  int mod_index = buffer_index - (int)(mod_depth * lfo * buffer_length);
-  if (mod_index < 0) mod_index += buffer_length;
-
-  int chorusValue = (audio_buffer[buffer_index] + audio_buffer[mod_index]) / 2;
-
-  DACoutput(map(chorusValue, 0, 1023, 0, 255));
-}
-
-void distortion(){
-  // Apply distortion effect
-  //audio_buffer: uint8_t [0,255]. distortedValue: int [-32768,32767]. max gain = 128. Not a worry.
-  float gain = 2; // Increase the gain for more distortion
-  int distortedValue = (int)audio_buffer[buffer_index] * gain;
-  if (distortedValue > 1023) {
-    distortedValue = 1023; // Clipping
-  } else if (distortedValue < 0) {
-    distortedValue = 0; // Clipping
-  }
-
-  DACoutput(map(distortedValue, 0, 1023, 0, 255));
-}
-
-void bitcrusher(){
-  // Apply bitcrusher effect
-  int stepSize = pow(2, 10 - bitDepth);
-  int crushedValue = (audio_buffer[buffer_index] / stepSize) * stepSize;
-  DACoutput(crushedValue);
-}
-
-void ring_mod(){
+void loop() {
   
+  unsigned long currentTime = micros();
+  float deltaTime = (currentTime - lastTime) / 1000000.0;
+  lastTime = currentTime;
+
+
+  
+  switch(effect_code){
+    case 0://bypass
+      int analogValue = analogRead(analogInPin);
+      DACoutput(map(analogValue, 0, 1023, 0, 255));
+      Serial.println(analogValue);
+      break;
+    
+    case 1://tremolo
+      phase += tremoloFrequency * deltaTime;
+      if (phase >= 1.0) {
+        phase -= 1.0;
+      }
+
+      // Calculate LFO value (sine wave)
+      float lfo = (1.0 + sin(2 * PI * phase)) / 2.0; // LFO ranges from 0.0 to 1.0
+
+      // Read the analog input
+      int analogValue = analogRead(analogInPin);
+
+      // Apply tremolo effect
+      int tremoloValue = analogValue * (1.0 - tremoloDepth + (lfo * tremoloDepth));
+
+      // Output the tremolo value to the DAC
+      // The DAC accepts values between 0 and 4095, while analogRead() returns values between 0 and 1023
+      DACoutput(map(tremoloValue, 0, 1023, 0, 255));
+      Serial.println(tremoloValue);
+      break;
+    
+    case 2:
+      // Update LFO phase
+      phase += 0.5 * deltaTime; // Chorus modulation frequency
+      if (phase >= 1.0) {
+        phase -= 1.0;
+      }
+
+      // Calculate LFO value (sine wave)
+      int index = (int)(phase * lfoResolution);
+      float lfo = pgm_read_byte_near(sineTable + index) / 255.0; // LFO ranges from 0.0 to 1.0
+
+      int analogValue = analogRead(analogInPin);
+
+      // Apply chorus effect
+      float modDepth = 0.5; // Depth of modulation
+      int modIndex = bufferIndex - (int)(modDepth * lfo * bufferSize);
+      if (modIndex < 0) {
+        modIndex += bufferSize;
+      }
+
+      int chorusValue = (analogValue + buffer[modIndex]) / 2;
+      buffer[bufferIndex] = analogValue;
+      bufferIndex = (bufferIndex + 1) % bufferSize;
+      DACoutput(map(chorusValue, 0, 1023, 0, 255));
+      Serial.println(chorusValue);
+      break;
+    
+    case 3:
+      int analogValue = analogRead(analogInPin);
+
+      // Apply distortion effect
+      int gain = 3; // Increase the gain for more distortion
+      int distortedValue = analogValue * gain;
+      if (distortedValue > 1023) {
+        distortedValue = 1023; // Clipping
+      } else if (distortedValue < 0) {
+        distortedValue = 0; // Clipping
+      }
+
+      DACoutput(map(distortedValue, 0, 1023, 0, 255));
+      Serial.println(distortedValue);
+      break;
+
+    case 4:
+      int analogValue = analogRead(analogInPin);
+
+      // Apply bitcrusher effect
+      int stepSize = pow(2, 10 - bitDepth);
+      int crushedValue = (analogValue / stepSize) * stepSize;
+      DACoutput(map(crushedValue, 0, 1023, 0, 255));
+      Serial.println(crushedValue);
+      break;
+  }
+
 }
+

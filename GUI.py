@@ -27,7 +27,7 @@ effect_label.grid(row=1, column=0, padx=10, pady=10)
 # Set up plot
 fig, ax = plt.subplots()
 max_samples = 1000  # Number of samples to display
-data = deque([0] * max_samples, maxlen=max_samples)
+data = deque([0] * max_samples, maxlen=max_samples)#array that could be cut from both ends
 
 line, = ax.plot(data, color='#FF4500')
 ax.set_ylim(0, 1024)  # Updated to match 10-bit ADC range
@@ -62,6 +62,23 @@ def update(frame):
     ax.autoscale_view()
     canvas.draw()
     return line,
+# def update(frame):
+#     if arduino_serial.in_waiting:
+#         try:
+#             line = arduino_serial.readline().strip().decode('utf-8')
+#             if line.startswith("Effect:"):
+#                 effect_name = line.split(":")[1].strip()
+#                 effect_label.config(text=f"Current Effect: {effect_name}")
+#             else:
+#                 value = int(line)
+#                 data.append(value)
+#         except ValueError:
+#             pass
+
+#     line.set_ydata(data)
+#     ax.relim()
+#     ax.autoscale_view()
+#     canvas.draw()
 
 # Animation function
 ani = animation.FuncAnimation(fig, update, interval=10, blit=True)

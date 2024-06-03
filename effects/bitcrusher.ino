@@ -7,10 +7,7 @@ const int analogInPin = A0;  // Analog input pin that the guitar is connected to
 // Constants
 const int sampleRate = 33000; // Sample rate in Hz
 const int bitDepth = 4; // Bit depth for bitcrusher effect
-
 unsigned long lastTime = 0;
-
-
 
 void DACoutput(int value) {    // value=[0,255], pin 6 is LSB, pin 13 is MSB
   int PB = value >> 2;
@@ -43,6 +40,5 @@ void loop() {
   // Apply bitcrusher effect
   int stepSize = pow(2, 10 - bitDepth);
   int crushedValue = (analogValue / stepSize) * stepSize;
-
   DACoutput(map(crushedValue, 0, 1023, 0, 255));
 }
