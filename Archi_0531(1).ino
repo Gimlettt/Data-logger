@@ -10,9 +10,9 @@
 #include <avr/pgmspace.h>
 #include <math.h>
 
-const uint8_t buffer_length = 60; //serial buffer length = 64bytes. 63 Bytes available for TX.
-uint8_t audio_buffer[buffer_length + 2]; //initialise buffer. 2nd last byte:current mode. Last byte: current buffer index
-uint8_t buffer_index = 0; //change this to uint16_t when length>256, and change the upload code.
+const uint8_t buffer_length = 64; //serial buffer length = 64bytes. 63 Bytes available for TX.
+int audio_buffer[buffer_length]; //initialise buffer. 2nd last byte:current mode. Last byte: current buffer index
+int buffer_index = 0; //change this to uint16_t when length>256, and change the upload code.
 
 unsigned long last_serial_time = 0;
 unsigned long serial_upload_interval = 30*1000; //upload every 30ms
@@ -95,7 +95,7 @@ void effect_last(){
 void buffer_update(){
   buffer_index++;
   if(buffer_index >= buffer_length) buffer_index = 0; //this is faster than % operator
-  audio_buffer[buffer_index] = analogRead(A0)>>2; //0-1023 -> 0-255
+  audio_buffer[buffer_index] = analogRead(A0); 
 }
 
 void bypass(){
@@ -115,14 +115,14 @@ void loop() {
   deltaTime = (currentTime - lastTime) / 1000000.0;
   lastTime = currentTime;
 
-  if(last_serial_time - currentTime >= serial_upload_interval){
-    audio_buffer[buffer_length] = effect_code;  //2nd last byte in the buffer is the effect code.
-    audio_buffer[buffer_length+1]= buffer_index;  //2nd last byte in the buffer is the effect code.
-    if(Serial.availableForWrite() >= buffer_length+1){
-      Serial.write(audio_buffer, buffer_length+1);
-    }
-    //time taken by serial write could cause clicks in sound. Try to see if we need to re-update the time here.
-  }
+  // if(last_serial_time - currentTime >= serial_upload_interval){
+  //   audio_buffer[buffer_length] = effect_code;  //2nd last byte in the buffer is the effect code.
+  //   audio_buffer[buffer_length+1]= buffer_index;  //2nd last byte in the buffer is the effect code.
+  //   if(Serial.availableForWrite() >= buffer_length+1){
+  //     Serial.write(audio_buffer, buffer_length+1);
+  //   }
+  //   //time taken by serial write could cause clicks in sound. Try to see if we need to re-update the time here.
+  // }
   
   switch(effect_code){
     case 0:
@@ -149,6 +149,8 @@ void loop() {
       ring_mod();
       break;
   }
+Serial.println(audio_buffer[buffer_index]);
+
 }
 
 void tremolo(){
@@ -162,7 +164,7 @@ void tremolo(){
   // Apply tremolo effect
   int tremoloValue = int(audio_buffer[buffer_index] * (1.0 - tremoloDepth + (lfo * tremoloDepth)));
   // Output the tremolo value to the DAC
-  DACoutput(tremoloValue);
+  DACoutput(map(tremoloValue, 0, 1023, 0, 63));
 }
 
 void chorus(){
@@ -181,12 +183,7 @@ void chorus(){
 
   int chorusValue = (audio_buffer[buffer_index] + audio_buffer[mod_index]) / 2;
 
-  if (chorusValue > 255) {
-    chorusValue = 255; // Clipping
-  } else if (chorusValue < 0) {
-    chorusValue = 0; // Clipping
-  }
-  DACoutput(chorusValue);
+  DACoutput(map(chorusValue, 0, 1023, 0, 255));
 }
 
 void distortion(){
@@ -194,12 +191,13 @@ void distortion(){
   //audio_buffer: uint8_t [0,255]. distortedValue: int [-32768,32767]. max gain = 128. Not a worry.
   float gain = 2; // Increase the gain for more distortion
   int distortedValue = (int)audio_buffer[buffer_index] * gain;
-  if (distortedValue > 255) {
-    distortedValue = 255; // Clipping
+  if (distortedValue > 1023) {
+    distortedValue = 1023; // Clipping
   } else if (distortedValue < 0) {
     distortedValue = 0; // Clipping
   }
-  DACoutput(distortedValue);
+
+  DACoutput(map(distortedValue, 0, 1023, 0, 255));
 }
 
 void bitcrusher(){
